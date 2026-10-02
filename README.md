@@ -1,35 +1,47 @@
-# Hermes 夜间记忆整理管线（dreaming v2）
+# Holographic Dreaming Plugin
 
-一个可移植的 Hermes 插件包，用于在夜间整理 `MEMORY.md`、`USER.md` 与 holographic fact_store：捕获会话事实和用户纠错，处理可安全自动化的对账，按水位压缩记忆，并审核后台 staged 改写。
+A portable nightly memory-consolidation pipeline ("dreaming") for [Hermes Agent](https://github.com/NousResearch/hermes-agent). While you sleep, it consolidates `MEMORY.md`, `USER.md` and the holographic fact_store: it captures session facts and user corrections, reconciles what is provably safe to reconcile, slims memory files against their watermarks, and reviews staged background rewrites — fully unattended, fail-closed, and silent on success.
 
-## 架构图（文字版）
+中文：[README.zh-CN.md](README.zh-CN.md) ｜ 日本語：[README.ja.md](README.ja.md)
+
+## Architecture
 
 ```text
-Hermes cron（本地投递，固定低成本模型）
-  → fact_extract_sweep（捕获＋普通抽取）
-  → 纠错对账（有证据且结构可验证才应用，否则内部 deferred）
-  → pending staged 写审核（逐项判断、应用或丢弃）
-  → MEMORY / USER 独立水位评估（达到阈值才例行瘦身）
-  → 保护集及写后校验、逐操作回执
+Hermes cron (local delivery, pinned low-cost model)
+  → fact_extract_sweep (correction capture + ordinary sweep)
+  → correction reconciliation (applied only with structural proof, else internal deferred)
+  → pending staged-write review (judge each, apply or discard)
+  → MEMORY / USER watermark evaluation (routine slimming at threshold)
+  → protected-set verification, per-operation receipts
 ```
 
-判断类工作由模型完成，脚本负责机械校验、执行与回执。运行成功且无需用户动作时保持静默。
+Judgment stays in the model layer; scripts do deterministic verification, execution and receipts. A successful run that needs no owner action emits zero stdout and zero push notifications.
 
-## 快速接入五步
+## Five-step quick start
 
-1. 准备 Hermes 实例：启用 holographic 记忆 provider、memory 工具与 cron；运行时 Python 可导入 `tools.memory_tool` 和 `tools.write_approval`。
-2. 设置 `HERMES_HOME`，将 `scripts/` 放到 `$HERMES_HOME/scripts/`，将 skill 放到 `$HERMES_HOME/skills/<category>/memory-consolidation/`。
-3. 为目标实例初始化保护集 EXPECTED，核对 D 类块及顺序后再允许夜间写入。
-4. 按 `docs/porting.md` 配置权限与水位参数，并创建每日 cron：`deliver=local`，显式固定便宜模型（例如 DeepSeek flash 档）。
-5. 首夜用 dry 模式验收，核对逐项回执 JSONL 与保护检查，确认没有推送，再启用正式写入。
+1. Prepare a Hermes instance with the holographic memory provider, the memory tool and cron enabled. The runtime Python must be able to import `tools.memory_tool` and `tools.write_approval`.
+2. Set `HERMES_HOME`. Put `scripts/` under `$HERMES_HOME/scripts/` and the skill under `$HERMES_HOME/skills/<category>/memory-consolidation/`.
+3. Initialize the protected-set EXPECTED for the target instance. Verify the frozen blocks before enabling any nightly write — an empty EXPECTED passing the check does **not** mean protection exists.
+4. Configure permissions and watermark limits per [docs/porting.md](docs/porting.md), then create a daily cron job: `deliver=local`, pinned low-cost model (e.g. a DeepSeek flash-tier model).
+5. Dry-run the first night in an isolated copy: verify per-operation receipt JSONL and the protected-set check, confirm zero pushes, then enable production writes.
 
-## 移植要点摘要
+## Porting highlights
 
-不同 Hermes 部署在工具 API、审批门、fact_store schema、会话数据库和 cron 字段上会有差异。移植时逐项映射，不能直接复用源实例保护内容。完整清单见 [docs/porting.md](docs/porting.md)，设计约束见 [docs/design.md](docs/design.md)。四个脚本的保护 EXPECTED 初始为空，必须在目标实例人工审定后填充。
+Hermes deployments differ in tool APIs, approval gates, fact_store schema, session database and cron fields. Map each one; never reuse another instance's protected content. Full checklist in [docs/porting.md](docs/porting.md); design constraints in [docs/design.md](docs/design.md).
 
-## 目录导览
+The three that bite most often:
 
-- [cron/nightly-prompt.md](cron/nightly-prompt.md)：参数化夜间执行 prompt 模板。
-- [skills/memory-consolidation/SKILL.md](skills/memory-consolidation/SKILL.md)：运行规则与决策边界。
-- [skills/memory-consolidation/references/](skills/memory-consolidation/references/)：裁决模板、瘦身 SOP、pending 审批 SOP、判官标定方法。
-- [scripts/](scripts/)：会话事实抽取、共享状态、保护集校验、后台 staged 写审核。
+1. Scripts must run under the Hermes runtime Python (they import `tools.memory_tool`), not the system Python.
+2. `memory.write_approval` only governs foreground writes — the background destructive-staging gate lives in runtime code and has no config switch. The bundled `memory_pending_review.py` brings that approval into the nightly flow.
+3. `fact_extract_sweep.py` expects an external `session_fact_extract.py` (the LLM extraction chain). That is each deployment's own model choice and is intentionally not shipped.
+
+## Layout
+
+- [cron/nightly-prompt.md](cron/nightly-prompt.md): parameterized nightly job prompt template.
+- [skills/memory-consolidation/SKILL.md](skills/memory-consolidation/SKILL.md): operating rules and decision boundaries.
+- [skills/memory-consolidation/references/](skills/memory-consolidation/references/): rulings template, watermark slimming SOP, pending-review SOP, judge calibration method.
+- [scripts/](scripts/): session fact sweep, shared state, protected-set check, staged-write reviewer.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
