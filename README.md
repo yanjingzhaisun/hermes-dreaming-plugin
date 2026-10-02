@@ -1,4 +1,4 @@
-# Holographic Dreaming Plugin
+# Hermes Dreaming Plugin
 
 A portable nightly memory-consolidation pipeline ("dreaming") for [Hermes Agent](https://github.com/NousResearch/hermes-agent). While you sleep, it consolidates `MEMORY.md`, `USER.md` and the holographic fact_store: it captures session facts and user corrections, reconciles what is provably safe to reconcile, slims memory files against their watermarks, and reviews staged background rewrites — fully unattended, fail-closed, and silent on success.
 

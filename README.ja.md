@@ -1,4 +1,4 @@
-# Holographic Dreaming Plugin
+# Hermes Dreaming Plugin
 
 [Hermes Agent](https://github.com/NousResearch/hermes-agent) 向けの、ポータブルな夜間メモリ整理パイプライン（"dreaming"）です。睡眠中に `MEMORY.md`、`USER.md`、holographic fact_store を整理します：セッションの事実とユーザーの修正を捕捉し、構造的に安全と証明できるものだけを照合し、水位に基づいてメモリを圧縮し、バックグラウンドで staged された書き換えを審査します。完全無人・fail-closed・成功時は無言です。
 
