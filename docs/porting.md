@@ -15,6 +15,25 @@
 
 脚本默认 `HERMES_HOME=~/.hermes`（展开后）。所有目标环境路径应从该根目录派生。运行脚本的 Python 必须是 Hermes 运行时本体所在环境，并已将运行时加入 `sys.path`；普通系统 Python 通常不能导入上述模块。
 
+## fact store 后端
+
+夜间流程的 fact-store 步骤需要一个可用的记忆 provider。两条路：
+
+- **用 Hermes 自带的 `holographic`**：无需安装。`memory.provider: holographic`，库落在 `db_path`（默认 `$HERMES_HOME/memory_store.db`）。
+- **用本仓库的 fork `plugin/holographic-plus/`**：整目录放到 `$HERMES_HOME/plugins/`，`memory.provider: holographic-plus`。三条增强（语义检索/语义实体归并/CJK 实体抽取）与 bundled 共用同一个库，sidecar 表 additive；回滚＝把 provider 改回 `holographic`，不需要迁移数据。
+
+安装 fork 时逐项核对：
+
+| 项 | 要求 |
+| --- | --- |
+| embedding 凭据 | 语义检索需要；缺失时自动降级为纯文本检索，不影响写入与可用性。配置键 `plugins.holographic-plus.embedding_api_key`，或环境变量 `DASHSCOPE_API_KEY`。 |
+| numpy | HRR 持久化写入需要；缺失时是**可诊断降级**：事实照写，但该条不带 `hrr_vector`（provider 记 warn 并给出本轮丢弃计数），在 `probe`/`related`/`reason` 路径里不可见，需事后回填。注意 ABI：解释器 3.14 配 cp313 的 vendor numpy 会被判「无 numpy」——`_HAS_NUMPY` 在首次 import 时缓存，所以不要盲目把第三方目录塞到 `sys.path` 最前面。 |
+| `hrr_dim` | 建库形状的一部分。所有直连 store 的脚本（抽取 hook、日抽、夜间桥）必须从同一配置读维度，不要各写常量。改维度＝全量 `rebuild_all_vectors(dim=N)`。 |
+| 库文件 | 必须是同一个绝对路径 `memory_store.db`；换 provider 不迁移数据。 |
+
+数据模型、打分与读写路径见 [factstore.md](factstore.md)；fork 的差异、配置键与重建流程见 [holographic-plus.md](holographic-plus.md)。
+
+
 ## 配置与写权限
 
 - 检查 `memory.write_approval` 的前台含义。此键通常不会关闭后台 `background_review` 的 destructive staging 门；不要将其误作夜间写入总开关。
@@ -50,4 +69,5 @@
 - pending 审批只覆盖 MEMORY/USER staged 写；fact_store 的物理删除仍需 owner 裁决。
 - 身份类内容不由夜间流程落地。
 - `fact_extract_sweep.py` 依赖外置 `session_fact_extract.py` 和若干同目录模块；该最小包仅包含指定四个脚本，需逐项核对这些运行时依赖。
+- LLM 事实抽取链（会话结束 hook + 抽取 prompt/模型路由）与冲突确认队列**有意不同捆**：模型供应商、语言、transcript schema、成本策略都是部署特定的。没有抽取链时，fact store 仍可由模型的 `fact_store(add)` 与内置 memory 工具的 `add` 镜像写入，但夜间 sweep 会退化成空转。
 - 各 Hermes 版本的工具 API、表结构与 scheduler schema 可能变化；必须在隔离环境验证。
