@@ -1,0 +1,3 @@
+[submodule "plugin/holographic-plus"]
+	path = plugin/holographic-plus
+	url = http://192.168.71.67:4100/zijianzhou/holographic-plus.git
