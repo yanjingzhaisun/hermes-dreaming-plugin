@@ -232,6 +232,16 @@ def _run_locked(args,start,end,receipt,conn):
                 rows=[row[:3] for row in timed_rows]
                 if not rows and not progress.get('pending'):
                     receipt.skip('no_new_messages');continue
+                if args.since is None and progress.get('pending'):
+                    # Retrying a frozen plan must also retain the rest of this
+                    # eligible session's backlog. Otherwise clearing the plan
+                    # removes its only retry trigger once the window moves on.
+                    planned_ids={item['id'] for chunk in progress['pending'] for item in chunk}
+                    fresh_rows=[row for row in rows if row[0] not in planned_ids]
+                    if fresh_rows:
+                        progress['pending'].extend(chunks(fresh_rows))
+                        progress['pending_last_id']=max(progress['pending_last_id'],max(r[0] for r in rows))
+                        atomic_json(progress_path,progress)
                 if not progress.get('pending'):
                     if args.since is None:
                         progress['pending']=list(chunks(rows))
