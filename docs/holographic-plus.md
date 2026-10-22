@@ -1,15 +1,15 @@
 # holographic-plus：相对 bundled provider 的差异
 
-参考实现目录：[../plugin/holographic-plus/](../plugin/holographic-plus/)，共 6 个文件（`__init__.py`、`store.py`、`retrieval.py`、`holographic.py`、`embeddings.py`、`embedding_index.py`）+ `plugin.yaml`。
+参考实现：[../plugin/holographic-plus/](../plugin/holographic-plus/)，是独立 [holographic-plus 仓库](http://192.168.71.67:4100/zijianzhou/holographic-plus)的固定版本 Git submodule。原始六个运行时模块（`__init__.py`、`store.py`、`retrieval.py`、`holographic.py`、`embeddings.py`、`embedding_index.py`）之外，还包含后续实体解析模块、测试、文档和 `plugin.yaml`；完整说明以[所固定版本的 README](../plugin/holographic-plus/README.md)为准。
 
-它是 Hermes 自带 `holographic` provider（MIT，原作者 dusterbloom）的 fork，**共用同一个 SQLite 库**，sidecar 表全部 additive。
+它是 Hermes 自带 `holographic` provider（MIT，原作者 dusterbloom）的 fork，**共用同一个 SQLite fact store**，另加 embedding 与实体解析 sidecar 表。后续版本引入实体身份安全约束与 H3 原子迁移；不能据此假定与 bundled provider 可直接互换。
 
 ## 1. 三条增强
 
 | 增强 | 做了什么 | 少了它会怎样 |
 | --- | --- | --- |
 | 语义检索 | DashScope `text-embedding-v4`（1024 维，OpenAI 兼容端点）写 `fact_embeddings` / `entity_embeddings` sidecar；检索时与 FTS5 候选池合并，按 `semantic_weight` 混合打分 | 退化为纯词面匹配：换个说法问同一件事就召不回 |
-| 语义实体归并 | 实体名高余弦（阈值默认 0.88）合并为别名 | 同一实体的不同写法各成一条实体，`probe` 会漏 |
+| 语义实体解析 | 相似度用于候选观察与受约束的身份解析；旧 `entity_merge_threshold=0.88` 仅保留调用兼容性，不再授权别名合并。迁移与自动合并试点见 [slice 4](../plugin/holographic-plus/docs/entity-resolution-slice4.md) | 同一实体的不同写法可能各成一条实体，影响召回 |
 | CJK 实体抽取 | 在原正则（大写短语/引号/aka）之外增加 `「」`、《》、中文双引号的跨度 | 中文对话里实体几乎抽不出来，事实等于没挂索引 |
 
 ## 2. 失败即降级（fail-open）的设计
@@ -39,7 +39,7 @@ plugins:
     fts_weight: 0.25
     jaccard_weight: 0.15
     hrr_weight: 0.15
-    entity_merge_threshold: 0.88
+    entity_merge_threshold: 0.88     # 旧调用兼容键，不是身份合并授权
     hrr_dim: 8192
 ```
 
@@ -54,20 +54,25 @@ plugins:
 
 ## 5. 安装与回滚
 
+先查看[插件 README](../plugin/holographic-plus/README.md)和 [slice 4 迁移要求](../plugin/holographic-plus/docs/entity-resolution-slice4.md)。以下仅向新的部署目录导出本仓固定版本的已提交文件，不复制 submodule 的 `.git` 指针或未跟踪文件；已有部署按插件仓的维护流程升级。
+
 ```bash
-# 安装：整目录放到 $HERMES_HOME/plugins/<name>/
-cp -r plugin/holographic-plus "$HERMES_HOME/plugins/"
+git submodule update --init --recursive
+mkdir -p "$HERMES_HOME/plugins"
+install_dir="$HERMES_HOME/plugins/holographic-plus"
+mkdir "$install_dir" &&
+  git -C plugin/holographic-plus archive HEAD | tar -x -C "$install_dir"
 
 # config.yaml 指向它（这些键只能通过 hermes CLI 或直接编辑 config 生效，见 porting 文档）
 #   memory.provider: holographic-plus
 ```
 
-回滚 = 把 `memory.provider` 改回 `holographic`。两个 provider 共用同一个库；sidecar 表留着不影响 bundled provider，不需要 drop。**不存在数据迁移步骤**，也不需要导出/导入。
+当前版本要求在启用前对既有库完成离线 H3 原子迁移。bundled `holographic` 不实现 phase110 身份安全门，直接切回它不是受支持的实体解析回滚。回滚与修复应遵循所固定版本的 [slice 2](../plugin/holographic-plus/docs/entity-resolution-slice2.md) 与 [slice 4](../plugin/holographic-plus/docs/entity-resolution-slice4.md) 文档。
 
 ## 6. 重建与体检
 
 - 语义向量体检（只读，报 missing/stale/orphan）：`embedding_index.inspect(conn, model, dim)`。
-- 全量重算 HRR：`MemoryStore.rebuild_all_vectors(dim=N)`（facts + 所有 category banks）。
+- 全量重算 HRR：`MemoryStore.rebuild_all_vectors(dim=N)`（facts + 所有 category banks）。它不能替代旧名字原子的离线 H3 迁移；先核对 [slice 4](../plugin/holographic-plus/docs/entity-resolution-slice4.md) 的迁移前置条件。
 - 语义向量回填：按 sidecar 体检结果，用批量接口（DashScope 单次最多 10 条输入）补 missing/stale，写入走 `save_if_current()`，源文本已变的写入会被拒而不是写歪。
 - 升级 bundled 版本后重做 fork 时：注意上游可能已修 bug，先 diff 上游 `plugins/memory/holographic/` 再决定是否保留本目录的同名文件。
 

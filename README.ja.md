@@ -11,7 +11,7 @@ English: [README.md](README.md) ｜ 中文：[README.zh-CN.md](README.zh-CN.md)
 | **fact store** | SQLite ベースの構造化メモリ：facts / entities / 信頼スコア / HRR 合成検索 / 任意のセマンティック（embedding）検索。`fact_store`・`fact_feedback` ツールを公開し、ターンごとに検索結果を注入。 | [`plugin/holographic-plus/`](plugin/holographic-plus/) + [docs/factstore.md](docs/factstore.md) |
 | **dreaming** | 無人で走る夜間ジョブ：セッションの事実とユーザー修正を捕捉し、構造的に安全と証明できる分だけ照合、水位に基づいて `MEMORY.md` / `USER.md` をスリム化、バックグラウンドで staged された書き換えを審査。fail-closed、成功時は無言。 | [`cron/`](cron/)、[`skills/`](skills/)、[`scripts/`](scripts/) + [docs/design.md](docs/design.md) |
 
-二つは独立しています。夜間ジョブがなくても store は動き、夜間ジョブの store 関連ステップには store が必要です。Hermes には同じスキーマの `holographic` provider が同梱済みで、本リポジトリの fork はその上にセマンティック検索・セマンティックなエンティティ統合・CJK エンティティ抽出を追加します（[docs/holographic-plus.md](docs/holographic-plus.md)）。
+二つは独立しています。夜間ジョブがなくても store は動き、夜間ジョブの store 関連ステップには store が必要です。Hermes には同じ SQLite fact store を使う `holographic` provider が同梱済みで、独立して管理される fork はセマンティック検索・エンティティ解決の安全制約・CJK エンティティ抽出を追加します（[docs/holographic-plus.md](docs/holographic-plus.md)）。
 
 ## アーキテクチャ
 
@@ -36,8 +36,14 @@ Hermes cron（ローカル配送、低コストモデル固定）
 
 ## 5 ステップ・クイックスタート
 
+`plugin/holographic-plus/` は独立した [holographic-plus リポジトリ](http://192.168.71.67:4100/zijianzhou/holographic-plus)のリビジョンを固定した Git submodule です。導入前に記録されたリビジョンを取得します。
+
+```bash
+git submodule update --init --recursive
+```
+
 1. holographic メモリ provider（同梱の `holographic`、または本リポジトリの fork）・memory ツール・cron が有効な Hermes インスタンスを用意。ランタイム Python が `tools.memory_tool` と `tools.write_approval` を import できること。
-2. `HERMES_HOME` を設定。`scripts/` を `$HERMES_HOME/scripts/`、skill を `$HERMES_HOME/skills/<category>/memory-consolidation/`、fork を使う場合は `plugin/holographic-plus/` を `$HERMES_HOME/plugins/` に配置。
+2. `HERMES_HOME` を設定。`scripts/` を `$HERMES_HOME/scripts/`、skill を `$HERMES_HOME/skills/<category>/memory-consolidation/`、fork を使う場合は[導入手順](docs/holographic-plus.md#5-安装与回滚)に従って固定リビジョンのプラグインファイルを `$HERMES_HOME/plugins/holographic-plus/` に書き出します。有効化する前に、そのリビジョンのデータベース移行要件を確認してください。
 3. 対象インスタンスの保護セット EXPECTED を初期化。夜間書き込みを有効にする前に凍結ブロックを検証——空の EXPECTED がチェックを通過しても保護が存在する意味には**なりません**。
 4. [docs/porting.md](docs/porting.md) に従って権限と水位を設定し、日次 cron を作成：`deliver=local`、低コストモデルを明示固定（例：DeepSeek flash 系）。
 5. 初夜は隔離コピーで dry-run：操作ごとのレシート JSONL と保護チェックを検収し、プッシュがゼロであることを確認してから本番書き込みを有効化。
@@ -55,7 +61,7 @@ Hermes デプロイごとにツール API・承認ゲート・fact_store スキ�
 
 ## 構成
 
-- [plugin/holographic-plus/](plugin/holographic-plus/)：メモリ provider（同梱 `holographic` の fork）。
+- [plugin/holographic-plus/](plugin/holographic-plus/)：独立したメモリ provider リポジトリのリビジョンを固定した submodule（同梱 `holographic` の fork）。
 - [docs/factstore.md](docs/factstore.md)：fact store のデータモデル、読み書き経路、スコアリング、HRR、信頼スコア。
 - [docs/holographic-plus.md](docs/holographic-plus.md)：fork の追加点、設定キー、導入/ロールバック、HRR 次元の規律。
 - [cron/nightly-prompt.md](cron/nightly-prompt.md)：夜間ジョブのプロンプトテンプレート（パラメータ化済み）。

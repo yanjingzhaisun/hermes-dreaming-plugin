@@ -11,7 +11,7 @@ English: [README.md](README.md) ｜ 日本語：[README.ja.md](README.ja.md)
 | **fact store** | SQLite 结构化记忆：事实、实体、信任分、HRR 组合检索、可选语义（embedding）检索。对外提供 `fact_store` / `fact_feedback` 工具，并按轮注入检索到的事实。 | [`plugin/holographic-plus/`](plugin/holographic-plus/) ＋ [docs/factstore.md](docs/factstore.md) |
 | **dreaming** | 无人值守的夜间运行：捕获会话事实与用户纠错，只对「结构上可证明安全」的部分对账，按水位瘦身 `MEMORY.md` / `USER.md`，审核后台 staged 改写。fail-closed，成功时静默。 | [`cron/`](cron/)、[`skills/`](skills/)、[`scripts/`](scripts/) ＋ [docs/design.md](docs/design.md) |
 
-两半互相独立：没有夜间 job，store 照样能用；夜里涉及 store 的步骤则需要有个 store。Hermes 自带 `holographic` provider、schema 相同——本包里的 fork 在它之上加了语义检索、语义实体归并、CJK 实体抽取三条（见 [docs/holographic-plus.md](docs/holographic-plus.md)）。
+两半互相独立：没有夜间 job，store 照样能用；夜里涉及 store 的步骤则需要有个 store。Hermes 自带 `holographic` provider，使用同一个 SQLite fact store；独立维护的 fork 增加语义检索、实体解析安全约束与 CJK 实体抽取（见 [docs/holographic-plus.md](docs/holographic-plus.md)）。
 
 ## 架构
 
@@ -36,8 +36,14 @@ Hermes cron（本地投递，固定低成本模型）
 
 ## 快速接入五步
 
+`plugin/holographic-plus/` 是独立 [holographic-plus 仓库](http://192.168.71.67:4100/zijianzhou/holographic-plus)的固定版本 Git submodule。安装前初始化本仓记录的版本：
+
+```bash
+git submodule update --init --recursive
+```
+
 1. 准备 Hermes 实例：启用 holographic 记忆 provider（自带 `holographic`，或本仓库的 fork）、memory 工具与 cron；运行时 Python 可导入 `tools.memory_tool` 与 `tools.write_approval`。
-2. 设置 `HERMES_HOME`：`scripts/` 放到 `$HERMES_HOME/scripts/`，skill 放到 `$HERMES_HOME/skills/<category>/memory-consolidation/`；要用 fork 就把 `plugin/holographic-plus/` 放到 `$HERMES_HOME/plugins/`。
+2. 设置 `HERMES_HOME`：`scripts/` 放到 `$HERMES_HOME/scripts/`，skill 放到 `$HERMES_HOME/skills/<category>/memory-consolidation/`；要用 fork，就按[安装说明](docs/holographic-plus.md#5-安装与回滚)把固定版本的插件文件导出到 `$HERMES_HOME/plugins/holographic-plus/`，启用前核对该版本的数据库迁移要求。
 3. 为目标实例初始化保护集 EXPECTED，核对冻结块后再允许夜间写入——EXPECTED 为空时检查通过**不代表**保护存在。
 4. 按 [docs/porting.md](docs/porting.md) 配置权限与水位，创建每日 cron：`deliver=local`，显式固定便宜模型（例如 DeepSeek flash 档）。
 5. 首夜在隔离副本里 dry-run：核对逐项回执 JSONL 与保护检查，确认无推送，再启用正式写入。
@@ -55,7 +61,7 @@ Hermes cron（本地投递，固定低成本模型）
 
 ## 目录导览
 
-- [plugin/holographic-plus/](plugin/holographic-plus/)：记忆 provider（自带 `holographic` 的 fork）。
+- [plugin/holographic-plus/](plugin/holographic-plus/)：独立记忆 provider 仓库的固定版本 submodule（自带 `holographic` 的 fork）。
 - [docs/factstore.md](docs/factstore.md)：fact store 的数据模型、读写路径、打分、HRR、信任分。
 - [docs/holographic-plus.md](docs/holographic-plus.md)：fork 加了什么、配置键、安装/回滚、HRR 维度纪律。
 - [cron/nightly-prompt.md](cron/nightly-prompt.md)：参数化夜间执行 prompt 模板。

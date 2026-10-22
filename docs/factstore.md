@@ -81,7 +81,7 @@ final_score = relevance * trust_score      # 信任加权，不是加法
 
 ## 6. 实体抽取与归并
 
-`_extract_entities()` 的正则规则（按序）：大写多词短语、双引号、单引号、`X aka Y`；holographic-plus 追加 CJK 引号跨度（`「」`、《》、中文双引号）。抽取结果先去重（大小写不敏感、保持首次出现顺序），再 `_resolve_entity()` 归并到已有实体：名字精确/别名命中即合并；配了 embedding 时，**高余弦相似的名字按 `entity_merge_threshold`（默认 0.88）合并为别名**。
+`_extract_entities()` 的正则规则（按序）：大写多词短语、双引号、单引号、`X aka Y`；holographic-plus 追加 CJK 引号跨度（`「」`、《》、中文双引号）。原始抽取结果先去重（大小写不敏感、保持首次出现顺序）。当前插件的实体身份写入受 phase110 安全门约束；相似度候选不再仅凭旧 `entity_merge_threshold=0.88` 自动合并为别名。名字解析、歧义处理及受约束的自动合并试点以所固定版本的 [slice 1](../plugin/holographic-plus/docs/entity-resolution-slice1.md) 与 [slice 4](../plugin/holographic-plus/docs/entity-resolution-slice4.md) 为准。
 
 ## 7. 信任分
 

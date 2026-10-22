@@ -20,7 +20,7 @@
 夜间流程的 fact-store 步骤需要一个可用的记忆 provider。两条路：
 
 - **用 Hermes 自带的 `holographic`**：无需安装。`memory.provider: holographic`，库落在 `db_path`（默认 `$HERMES_HOME/memory_store.db`）。
-- **用本仓库的 fork `plugin/holographic-plus/`**：整目录放到 `$HERMES_HOME/plugins/`，`memory.provider: holographic-plus`。三条增强（语义检索/语义实体归并/CJK 实体抽取）与 bundled 共用同一个库，sidecar 表 additive；回滚＝把 provider 改回 `holographic`，不需要迁移数据。
+- **用独立插件仓的固定版本 submodule `plugin/holographic-plus/`**：先运行 `git submodule update --init --recursive`，再按[安装说明](holographic-plus.md#5-安装与回滚)导出已提交文件到 `$HERMES_HOME/plugins/holographic-plus/`，设置 `memory.provider: holographic-plus`。启用前遵循[插件 README](../plugin/holographic-plus/README.md) 的数据库迁移要求；直接切回 bundled provider 不构成受支持的实体解析回滚。
 
 安装 fork 时逐项核对：
 
@@ -29,7 +29,7 @@
 | embedding 凭据 | 语义检索需要；缺失时自动降级为纯文本检索，不影响写入与可用性。配置键 `plugins.holographic-plus.embedding_api_key`，或环境变量 `DASHSCOPE_API_KEY`。 |
 | numpy | HRR 持久化写入需要；缺失时是**可诊断降级**：事实照写，但该条不带 `hrr_vector`（provider 记 warn 并给出本轮丢弃计数），在 `probe`/`related`/`reason` 路径里不可见，需事后回填。注意 ABI：解释器 3.14 配 cp313 的 vendor numpy 会被判「无 numpy」——`_HAS_NUMPY` 在首次 import 时缓存，所以不要盲目把第三方目录塞到 `sys.path` 最前面。 |
 | `hrr_dim` | 建库形状的一部分。所有直连 store 的脚本（抽取 hook、日抽、夜间桥）必须从同一配置读维度，不要各写常量。改维度＝全量 `rebuild_all_vectors(dim=N)`。 |
-| 库文件 | 必须是同一个绝对路径 `memory_store.db`；换 provider 不迁移数据。 |
+| 库文件 | 核对绝对路径 `memory_store.db` 与插件版本；既有库启用当前插件前需要离线 H3 原子迁移，见 [slice 4](../plugin/holographic-plus/docs/entity-resolution-slice4.md)。 |
 
 数据模型、打分与读写路径见 [factstore.md](factstore.md)；fork 的差异、配置键与重建流程见 [holographic-plus.md](holographic-plus.md)。
 
