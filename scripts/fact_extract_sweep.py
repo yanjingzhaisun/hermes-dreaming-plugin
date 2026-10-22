@@ -25,7 +25,7 @@ import sqlite3
 import sys
 import time
 from fact_extract_state import (RunReceipt, source_chunks, pending_sessions, bounded_lock,
-                                record_failure, resolve_failure)
+                                record_failure, resolve_failure, query_failures)
 
 HERMES_HOME = Path(os.path.expanduser(os.environ.get('HERMES_HOME', '~/.hermes')))
 STATE_DB = HERMES_HOME / 'state.db'
@@ -199,6 +199,11 @@ def _run_locked(args,start,end,receipt,conn):
         if args.since is None:
             seen={r[0] for r in candidates}
             resumable=pending_sessions(extractor.SHARED_ROOT)
+            # A source read or initial plan write can fail before either
+            # pending ledger exists. Its durable failure still needs a retry
+            # after the session falls outside the rolling eligibility window.
+            resumable.extend(item['session_id'] for item in query_failures(extractor.SHARED_ROOT)
+                             if item['unit_key']=='sweep-source-read')
             for directory in (JOURNAL,extractor.LEGACY_SWEEP):
                 for path in sorted(directory.glob('*.json')):
                     if len(path.stem)!=64:continue
