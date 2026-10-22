@@ -18,6 +18,7 @@ import fcntl
 import hashlib
 import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import sqlite3
@@ -81,7 +82,8 @@ def main():
     for option in ('db','backup-root','log-path','queue-path'):
         ap.add_argument('--'+option)
     args=ap.parse_args()
-    if args.slice_hours<=0: ap.error('--slice-hours must be positive')
+    if not math.isfinite(args.slice_hours) or args.slice_hours<=0:
+        ap.error('--slice-hours must be finite and positive')
     end=args.until if args.until is not None else time.time()
     start=args.since if args.since is not None else end-WINDOW_SECONDS
     if start>=end: ap.error('--since must precede --until')
@@ -91,10 +93,11 @@ def main():
     except (Exception,SystemExit) as exc:
         receipt.data['failures'].append({'status':'failed','error':type(exc).__name__,'detail':str(exc)[:300]})
         receipt.finish('partial' if receipt.data['processed'] else 'failed')
-        print('sweep failed; receipt='+str(receipt.path),file=sys.stderr)
+        detail=' (dry run)' if args.dry_run else '; receipt='+str(receipt.path)
+        print('sweep failed'+detail,file=sys.stderr)
         return 1
     # S follows successful core work; failure cannot roll back shared source progress.
-    if not args.dry_run:
+    if not args.dry_run and not receipt.data['skipped_reason'].get('extractor_unavailable'):
         soft_review_after_core(args,receipt)
     summary=receipt.data.get('summary') or {}
     # 部分成功语义：有会话失败不等于整轮失败——仍是 partial（本轮干出了活），
@@ -117,9 +120,16 @@ def main():
 
 
 def soft_review_after_core(args, receipt, *, judge=None, embedding_client=None):
-    from fact_semantic_review import drain, mode
     db=getattr(args,'db',None) or STORE_DB
     try:
+        try:
+            from fact_semantic_review import drain, mode
+        except ModuleNotFoundError as exc:
+            if exc.name != 'fact_semantic_review':
+                raise
+            receipt.data['soft_review']={'status':'disabled','reason':'module_unavailable','calls':0,'tokens':0}
+            receipt.save()
+            return
         # Off is read-only and works on old non-v2 fixtures without side effects.
         if mode(db)['mode']=='off':
             receipt.data['soft_review']={'status':'disabled','calls':0,'tokens':0}
@@ -134,7 +144,10 @@ def soft_review_after_core(args, receipt, *, judge=None, embedding_client=None):
 
 
 def run_sweep(args,start,end,receipt):
-    conn=sqlite3.connect(f'file:{STATE_DB}?mode=ro',uri=True)
+    if not args.dry_run and not (HERMES_HOME / 'scripts/session_fact_extract.py').is_file():
+        receipt.skip('extractor_unavailable')
+        return 0
+    conn=sqlite3.connect(Path(STATE_DB).resolve().as_uri()+'?mode=ro',uri=True)
     try:
         return _run_locked(args,start,end,receipt,conn)
     finally:
@@ -209,11 +222,22 @@ def _run_locked(args,start,end,receipt,conn):
                 progress=json.loads(progress_path.read_text()) if progress_path.exists() else (
                     json.loads(old_path.read_text()) if old_path.exists() else {'session_id':sid,'last_id':0})
                 lower=start if args.since is not None else 0
-                rows=conn.execute("SELECT id,role,content FROM messages WHERE session_id=? AND id>? AND timestamp>? AND timestamp<=? AND active=1 AND role IN ('user','assistant') AND content IS NOT NULL AND content!='' ORDER BY id",(sid,progress['last_id'],lower,end)).fetchall()
+                cursor=progress['last_id'] if args.since is None else 0
+                timed_rows=conn.execute("SELECT id,role,content,timestamp FROM messages WHERE session_id=? AND id>? AND timestamp>? AND timestamp<=? AND active=1 AND role IN ('user','assistant') AND content IS NOT NULL AND content!='' ORDER BY id",(sid,cursor,lower,end)).fetchall()
+                rows=[row[:3] for row in timed_rows]
                 if not rows and not progress.get('pending'):
                     receipt.skip('no_new_messages');continue
                 if not progress.get('pending'):
-                    progress['pending']=list(chunks(rows))
+                    if args.since is None:
+                        progress['pending']=list(chunks(rows))
+                    else:
+                        shards={}
+                        for row in timed_rows:
+                            # Windows are (start, end], so boundary messages
+                            # belong to the shard ending at that boundary.
+                            shard=math.ceil((row[3]-start)/(args.slice_hours*3600))-1
+                            shards.setdefault(shard,[]).append(row[:3])
+                        progress['pending']=[chunk for shard in sorted(shards) for chunk in chunks(shards[shard])]
                     progress['pending_last_id']=max(r[0] for r in rows)
                     atomic_json(progress_path,progress)
                 if args.since is not None:
@@ -233,7 +257,7 @@ def _run_locked(args,start,end,receipt,conn):
                 if result['already_consumed']:receipt.skip('shared_already_consumed');status='already_consumed'
                 if result['legacy_held']:receipt.skip('legacy_coverage_held');status='legacy_coverage_held'
                 if result['pending']:raise RuntimeError('source units deferred')
-                progress['last_id']=progress.pop('pending_last_id')
+                progress['last_id']=max(progress['last_id'],progress.pop('pending_last_id'))
                 progress.pop('pending')
                 atomic_json(progress_path,progress)  # v2 only; never old_path
                 resolve_failure(extractor.SHARED_ROOT,sid,'sweep-source-read')

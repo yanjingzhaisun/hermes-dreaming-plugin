@@ -52,7 +52,8 @@ class RunReceipt:
         self.save()
 
     def save(self):
-        atomic_json(self.path, self.data)
+        if not self.data['dry_run']:
+            atomic_json(self.path, self.data)
 
     def skip(self, reason):
         counts = self.data['skipped_reason']
@@ -121,6 +122,8 @@ def query_failures(root, include_resolved=False):
 
 
 def source_chunks(rows, max_chars=18000):
+    if not isinstance(max_chars, int) or max_chars <= 100:
+        raise ValueError('max_chars must be an integer greater than 100')
     current, size = [], 0
     for ident, role, text in rows:
         for offset, start in enumerate(range(0, len(text), max_chars-100)):
@@ -168,6 +171,7 @@ def consume_sources(root, session_id, chunks, extract, validate, write,
     Atom-level ownership makes grouping independent of which pipeline came first.
     Saved facts survive DB failures; history is never regenerated on replay.
     """
+    chunks=list(chunks)
     path=session_path(root,session_id)
     with bounded_lock(path.with_suffix('.lock')):
         state=json.loads(path.read_text()) if path.exists() else dict(version=2,session_id=session_id,units=[])

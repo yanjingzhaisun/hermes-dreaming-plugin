@@ -60,7 +60,7 @@ def _file_text(target):
     p = MEMORIES_DIR / name
     try:
         return p.read_text(encoding="utf-8-sig")
-    except Exception:
+    except FileNotFoundError:
         return ""
 
 
@@ -69,10 +69,10 @@ def _op_view(op, file_text):
     return {
         "action": op.get("action"),
         "target": op.get("target", "memory"),
-        "old_text": (op.get("old_text") or "")[:100],
-        "content": (op.get("content") or "")[:200],
-        "matched_entry": pinned[:120],
-        "pin_alive": bool(pinned) and pinned in file_text,
+        "old_text": op.get("old_text") or "",
+        "content": op.get("content") or "",
+        "matched_entry": pinned,
+        "pin_alive": bool(pinned) and [entry.strip("\n") for entry in file_text.split("\n§\n")].count(pinned) == 1,
     }
 
 
@@ -84,11 +84,18 @@ def cmd_list():
     for rec in records:
         payload = rec.get("payload", {})
         target = payload.get("target", "memory")
-        if target not in texts:
-            texts[target] = _file_text(target)
         ops = payload.get("operations") if payload.get("action") == "batch" else [payload]
-        views = [_op_view(op or {}, texts[target]) for op in (ops or [])]
-        key = "|".join((v["matched_entry"] or v["old_text"])[:60] for v in views)
+        views = []
+        for op in ops or []:
+            op = dict(op or {})
+            op.setdefault("target", target)
+            op_target = op["target"]
+            if op_target not in texts:
+                texts[op_target] = _file_text(op_target)
+            views.append(_op_view(op, texts[op_target]))
+        # Only complete, identical pins on identical targets establish duplicates.
+        key = ("pins", tuple((v["target"], v["matched_entry"]) for v in views)) if views and all(
+            v["matched_entry"] for v in views) else ("record", rec["id"])
         groups.setdefault(key, []).append(rec["id"])
         out.append({
             "id": rec["id"],
@@ -107,6 +114,7 @@ def cmd_list():
 
 
 def _load_record(rec_id):
+    _record_id(rec_id)
     p = PENDING_DIR / f"{rec_id}.json"
     if not p.exists():
         return None
@@ -114,7 +122,7 @@ def _load_record(rec_id):
 
 
 def cmd_approve(ids, dry, run_id):
-    store = load_on_disk_store()
+    store = None if dry else load_on_disk_store()
     ok = fail = 0
     for rec_id in ids:
         rec = _load_record(rec_id)
@@ -140,11 +148,16 @@ def cmd_approve(ids, dry, run_id):
             fail += 1
     if not dry:
         print(f"approve done: {ok} applied, {fail} failed")
+    return 1 if fail else 0
 
 
-def cmd_discard(ids, reason, run_id):
+def cmd_discard(ids, reason, run_id, dry=False):
     n = 0
     for rec_id in ids:
+        _record_id(rec_id)
+        if dry:
+            print(f"{rec_id}: dry — discard ({reason})")
+            continue
         if wa.discard_pending(wa.MEMORY, rec_id):
             _receipt("discard", rec_id, "dropped", reason=reason, run_id=run_id)
             print(f"{rec_id}: discarded ({reason})")
@@ -152,36 +165,46 @@ def cmd_discard(ids, reason, run_id):
         else:
             print(f"{rec_id}: no such pending record")
     print(f"discard done: {n} dropped")
+    return 0 if dry or n == len(ids) else 1
+
+
+def _record_id(value):
+    if not value or value in (".", "..") or "/" in value or "\\" in value:
+        raise ValueError("pending ID must be a filename without path separators")
+    return value
 
 
 def main():
     ap = argparse.ArgumentParser(description="Dreaming memory pending reviewer")
-    ap.add_argument("--list", action="store_true")
-    ap.add_argument("--approve", nargs="*", default=None, metavar="ID")
-    ap.add_argument("--discard", nargs="*", default=None, metavar="ID")
+    actions = ap.add_mutually_exclusive_group()
+    actions.add_argument("--list", action="store_true")
+    actions.add_argument("--approve", nargs="+", type=_record_id, default=None, metavar="ID")
+    actions.add_argument("--discard", nargs="+", type=_record_id, default=None, metavar="ID")
     ap.add_argument("--reason", default="")
     ap.add_argument("--dry", action="store_true")
     ap.add_argument("--run-id", default="")
     args = ap.parse_args()
 
+    if args.discard is not None and not args.reason:
+        ap.error("--discard needs --reason")
+    if args.list:
+        cmd_list()
+        return 0
+    if args.approve is None and args.discard is None:
+        ap.print_help()
+        return 0
+    if args.dry:
+        if args.approve is not None:
+            return cmd_approve(args.approve, True, args.run_id)
+        return cmd_discard(args.discard, args.reason, args.run_id, dry=True)
+
     PENDING_DIR.mkdir(parents=True, exist_ok=True)
     with LOCK.open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        if args.list:
-            cmd_list()
-        elif args.approve is not None:
-            if not args.approve:
-                ap.error("--approve needs at least one ID")
-            cmd_approve(args.approve, args.dry, args.run_id)
-        elif args.discard is not None:
-            if not args.discard:
-                ap.error("--discard needs at least one ID")
-            if not args.reason:
-                ap.error("--discard needs --reason")
-            cmd_discard(args.discard, args.reason, args.run_id)
-        else:
-            ap.print_help()
+        if args.approve is not None:
+            return cmd_approve(args.approve, False, args.run_id)
+        return cmd_discard(args.discard, args.reason, args.run_id)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

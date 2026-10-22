@@ -45,7 +45,7 @@
 ## 保护集初始化
 
 1. 先由部署维护者识别 MEMORY.md 和 USER.md 中不可压缩、不可重排的保护块。
-2. 将每块的完整预期 SHA-256、稳定标签和文件名登记到 `scripts/dream_protected_check.py` 的 `EXPECTED`。
+2. 将每块的完整预期 SHA-256、稳定标签和文件名登记到 `scripts/dream_protected_check.py` 的 `EXPECTED`，按保护块在文件中的相对顺序排列；标签必须唯一匹配该块开头。检查器验证哈希与顺序，异常时以非零状态退出。
 3. 在启用夜间写之前运行保护检查，验证全部条目均为 OK；EXPECTED 为空时检查通过不代表实例已建立保护集，必须由运维流程显式确认初始化完成。
 4. 检查器不会复制任何其他部署的保护内容。保护块增加/改变只通过独立的主会话审定流程更新 EXPECTED。
 
@@ -69,5 +69,5 @@
 - pending 审批只覆盖 MEMORY/USER staged 写；fact_store 的物理删除仍需 owner 裁决。
 - 身份类内容不由夜间流程落地。
 - `fact_extract_sweep.py` 依赖外置 `session_fact_extract.py` 和若干同目录模块；该最小包仅包含指定四个脚本，需逐项核对这些运行时依赖。
-- LLM 事实抽取链（会话结束 hook + 抽取 prompt/模型路由）与冲突确认队列**有意不同捆**：模型供应商、语言、transcript schema、成本策略都是部署特定的。没有抽取链时，fact store 仍可由模型的 `fact_store(add)` 与内置 memory 工具的 `add` 镜像写入，但夜间 sweep 会退化成空转。
+- LLM 事实抽取链（会话结束 hook + 抽取 prompt/模型路由）与冲突确认队列**有意不同捆**：模型供应商、语言、transcript schema、成本策略都是部署特定的。没有抽取链时，fact store 仍可由模型的 `fact_store(add)` 与内置 memory 工具的 `add` 镜像写入，但夜间 sweep 会退化成空转，并在正常运行回执中记录 `extractor_unavailable`；缺少可选语义复核模块时记录 `disabled`。`--dry-run` 只在内存中保留统计，不创建回执文件。
 - 各 Hermes 版本的工具 API、表结构与 scheduler schema 可能变化；必须在隔离环境验证。
