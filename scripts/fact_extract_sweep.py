@@ -238,7 +238,11 @@ def _run_locked(args,start,end,receipt,conn):
                             shard=math.ceil((row[3]-start)/(args.slice_hours*3600))-1
                             shards.setdefault(shard,[]).append(row[:3])
                         progress['pending']=[chunk for shard in sorted(shards) for chunk in chunks(shards[shard])]
-                    progress['pending_last_id']=max(r[0] for r in rows)
+                    # A bounded replay can leave older messages unconsumed.
+                    # Persist its original ordinary cursor in the plan so a
+                    # later retry cannot advance past those missing messages.
+                    progress['pending_last_id']=(max(r[0] for r in rows)
+                        if args.since is None else progress['last_id'])
                     atomic_json(progress_path,progress)
                 if args.since is not None:
                     allowed={r[0] for r in rows}
