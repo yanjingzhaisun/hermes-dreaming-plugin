@@ -6,7 +6,7 @@
 
 - **结构迁移已完成**：正典是 `/vol1/1000/hermes-new/data/projects/holographic-plus`，origin 为 Gitea `zijianzhou/holographic-plus`；`/vol1/1000/hermes-new/data/plugins/holographic-plus` 是部署副本。本仓的 `plugin/holographic-plus` 是 `160000` gitlink，`.gitmodules` 的 HTTP URL 正确，GitHub remote 已不存在。
 - **历史证据得到复核**：13 个原始 Python SHA256 均匹配初始提交 `3521896162c86d6beced36820cae62753f0c3239` 的 Git blob；报告中的完整 staged diff 与 `1119d535..68215762` 的实际 diff 逐字节一致；LICENSE 与 NOTICE 来源得到保留。哈希对照证明两次观测相同，不能独立证明历史期间没有任何临时写入或进程操作。
-- **安全修正 pin**：本次从 `c23a9bd91e970aec6e0411919942f9bb98c9e1be` 更新到 `b1734859fb9ebfd1bf184040e5370b63d478fc6b`；更新前 `git ls-remote --symref origin HEAD refs/heads/main` 已确认后者是 Gitea 已发布的 main。正典工作区 HEAD 为 `2cf914cf0ba6efafdea594e44275e102e1abff75`，另有 4 个尚未发布的提交，未将其写入本仓 gitlink。
+- **安全修正 pin**：本次从 `c23a9bd91e970aec6e0411919942f9bb98c9e1be` 更新到 `b1734859fb9ebfd1bf184040e5370b63d478fc6b`；更新前 `git ls-remote --symref origin HEAD refs/heads/main` 已确认后者是 Gitea 已发布的 main。复核开始时正典工作区 HEAD 为 `2cf914cf0ba6efafdea594e44275e102e1abff75`，另有 4 个尚未发布的提交。复核期间另一个进程归档了两份 phase prompt，新增文档提交 `a395fae`，使正典比已发布 main 多 5 个提交；既有文件字节未变。本次未将这些未发布提交写入本仓 gitlink。
 - **历史验收缺口保留**：此前合并单要求的五套回归测试当时没有运行，也未找到 `work_report_merge_20261013.md`。本次在 `b173485` 的隔离导出副本运行五个指定测试模块，29 项通过；这是当前验证，不能补称为 2026-10-13 的测试结果。实体 mutation 验证脚本保留但本次未执行。
 - **当前部署仍有差异**：发布版本的 `retrieval.py` 与生产不同；正典 HEAD 还在 `store.py` 上不同。没有从生产反向覆盖正典，也没有部署或修改生产。是否发布正典额外提交、何时部署，需要另行决定。
 - **文档已同步修正**：三语 README 补充 submodule 初始化与固定版本说明；安装文档改为导出已提交文件，避免复制 `.git` 指针；删除已失真的“无需迁移即可切回 bundled provider”和旧阈值自动合并承诺，指向所固定插件版本的迁移与身份解析说明。
